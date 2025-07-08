@@ -8,6 +8,10 @@ to the config assets directory.
 import numpy as np
 import tqdm
 import tyro
+import logging
+
+# Set logging level to INFO
+logging.basicConfig(level=logging.INFO)
 
 import openpi.shared.normalize as normalize
 import openpi.training.config as _config
@@ -67,7 +71,7 @@ def main(config_name: str, max_frames: int | None = None):
     norm_stats = {key: stats.get_statistics() for key, stats in stats.items()}
 
     output_path = config.assets_dirs / data_config.repo_id
-    print(f"Writing stats to: {output_path}")
+    print(f"Writing stats to: {output_path}") # /home/work/Workspaces/kangmin_kim/openpi/assets/pi0_libero/physical-intelligence/libero
     normalize.save(output_path, norm_stats)
 
 

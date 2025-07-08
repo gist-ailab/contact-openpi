@@ -27,10 +27,10 @@ import tyro
 
 REPO_NAME = "obj_centric_vla/libero"  # Name of the output dataset, also used for the Hugging Face Hub
 RAW_DATASET_NAMES = [
-    "libero_10_no_noops",
+    # "libero_10_no_noops",
     "libero_goal_no_noops",
-    "libero_object_no_noops",
-    "libero_spatial_no_noops",
+    # "libero_object_no_noops",
+    # "libero_spatial_no_noops",
 ]  # For simplicity we will combine multiple Libero datasets into one training dataset
 
 
@@ -77,8 +77,7 @@ def main(data_dir: str, *, push_to_hub: bool = False):
     for raw_dataset_name in RAW_DATASET_NAMES:
         raw_dataset = tfds.load(raw_dataset_name, data_dir=data_dir, split="train")
         for episode in raw_dataset:
-            print('episode: ', episode)
-            exit()
+
             for step in episode["steps"].as_numpy_iterator():
                 dataset.add_frame(
                     {
