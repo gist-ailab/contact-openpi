@@ -169,3 +169,4 @@ cython_debug/
 
 modified_libero_rlds/
 modified_libero_rlds_ctp/
+*.zip

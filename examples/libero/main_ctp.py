@@ -132,6 +132,7 @@ def eval_libero(args: Args) -> None:
                         element = {
                             "observation/image": img,
                             "observation/wrist_image": wrist_img,
+                            "observation/point_image": np.zeros_like(img),
                             "observation/state": np.concatenate(
                                 (
                                     obs["robot0_eef_pos"],

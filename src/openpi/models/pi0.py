@@ -181,7 +181,6 @@ class Pi0(_model.BaseModel):
         # embed images
         for name in obs.images:
             image_tokens, _ = self.PaliGemma.img(obs.images[name], train=False)
-
             tokens.append(image_tokens)
             input_mask.append(
                 einops.repeat(
@@ -192,7 +191,7 @@ class Pi0(_model.BaseModel):
             )
             # image tokens attend to each other
             ar_mask += [False] * image_tokens.shape[1]
-
+        
         # add language (aka tokenized inputs)
         if obs.tokenized_prompt is not None:
             tokenized_inputs = self.PaliGemma.llm(obs.tokenized_prompt, method="embed")
@@ -261,6 +260,21 @@ class Pi0(_model.BaseModel):
         (prefix_out, suffix_out), _ = self.PaliGemma.llm(
             [prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions
         )
+
+        txt_logits = self.PaliGemma.llm(
+            prefix_out[:, 768:, :], 
+            method="embedder_decode"
+        )
+        txt_logp = jax.nn.log_softmax(txt_logits, axis=-1)
+        top_txt_logp = jnp.argmax(txt_logp, axis=-1)
+
+        top_txt_logp_numpy = jax.device_get(top_txt_logp) # (batch_size, token_len(48))
+        print(f"top_txt_logp_numpy shape: {top_txt_logp_numpy.shape}")
+        print(f"top_txt_logp_numpy first batch: {top_txt_logp_numpy}")
+        
+        exit()
+        jax.debug.print("top_txt_logp_numpy first batch: {}", top_txt_logp_numpy)
+
         v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
         return jnp.mean(jnp.square(v_t - u_t), axis=-1)

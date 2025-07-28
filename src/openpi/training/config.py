@@ -560,7 +560,8 @@ _CONFIGS = [
         # dataset. For your own dataset, you can change the repo_id to point to your dataset.
         # Also modify the DataConfig to use the new config you made for your dataset above.
         data=LeRobotLiberoDataConfig(
-            repo_id="physical-intelligence/libero",
+            # repo_id="physical-intelligence/libero",
+            repo_id="obj_centric_vla/libero",
             base_config=DataConfig(
                 # This flag determines whether we load the prompt (i.e. the task instruction) from the
                 # ``task`` field in the LeRobot dataset. If set to True, the prompt will show up in
@@ -575,7 +576,8 @@ _CONFIGS = [
         # Check the base TrainConfig class for a full list of available hyperparameters.
         num_train_steps=30_000,
         # batch_size=64,
-    ),TrainConfig(
+    ),
+    TrainConfig(
         # Change the name to reflect your model and dataset.
         name="pi0_ctp_libero",
         # Here you define the model config -- In this example we use pi0 as the model

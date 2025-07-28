@@ -5,8 +5,9 @@ from openpi.models import tokenizer as _tokenizer
 
 def test_tokenize():
     tokenizer = _tokenizer.PaligemmaTokenizer(max_len=10)
-    tokens, masks = tokenizer.tokenize("Hello, world!")
-
+    # tokens, masks = tokenizer.tokenize("Hello, world!")
+    tokens, masks = tokenizer.tokenize("detect the object")
+    print(f"Tokens: {tokens}")
     assert tokens.shape == (10,)
     assert masks.shape == (10,)
 
@@ -25,3 +26,5 @@ def test_fast_tokenizer():
 
     act = tokenizer.extract_actions(tokens, 3, 2)
     assert act.shape == (3, 2)
+
+test_tokenize()

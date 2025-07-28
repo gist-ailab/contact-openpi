@@ -127,7 +127,9 @@ class CallbackHandler(ocp.AsyncCheckpointHandler):
 
     async def async_save(self, directory: epath.Path, args: CallbackSave) -> list[futures.Future]:
         return [future.CommitFutureAwaitingContractedSignals(asyncio.to_thread(self.save, directory, args))]
-
+        # return [future.Future(asyncio.to_thread(self.save, directory, args))]
+    # async def async_save(self, directory: epath.Path, args: "CallbackSave") -> list[futures.Future]:
+    #     return [self._executor.submit(self.save, directory, args)]
     def restore(self, *args, **kwargs):
         raise NotImplementedError("CallbackHandler does not support restore")
 

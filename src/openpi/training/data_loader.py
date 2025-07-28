@@ -229,16 +229,16 @@ def create_data_loader(
     """Create a data loader for training."""
     data_config = config.data.create(config.assets_dirs, config.model)
 
-    if data_config.rlds_data_dir is not None:
-        return create_rlds_data_loader(
-            data_config,
-            action_horizon=config.model.action_horizon,
-            batch_size=config.batch_size,
-            sharding=sharding,
-            shuffle=shuffle,
-            num_batches=num_batches,
-            skip_norm_stats=skip_norm_stats,
-        )
+    # if data_config.rlds_data_dir is not None:
+    #     return create_rlds_data_loader(
+    #         data_config,
+    #         action_horizon=config.model.action_horizon,
+    #         batch_size=config.batch_size,
+    #         sharding=sharding,
+    #         shuffle=shuffle,
+    #         num_batches=num_batches,
+    #         skip_norm_stats=skip_norm_stats,
+    #     )
     return create_torch_data_loader(
         data_config,
         model_config=config.model,
