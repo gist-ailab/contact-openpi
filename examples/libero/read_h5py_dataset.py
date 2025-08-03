@@ -230,7 +230,7 @@ def main(
     print(f"Reading h5py dataset: {file_path}")
     
     # 기본 정보 출력
-    print_dataset_info(file_path)
+    # print_dataset_info(file_path)
     
     # 통계 정보 출력 (요청된 경우)
     if show_stats:

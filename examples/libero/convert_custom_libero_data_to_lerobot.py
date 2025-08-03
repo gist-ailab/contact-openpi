@@ -31,7 +31,9 @@ import tyro
 REPO_NAME = "obj_centric_vla/libero"  # Name of the output dataset, also used for the Hugging Face Hub
 RAW_DATASET_NAMES = [
     # "libero_10_no_noops",
-    "libero_goal_no_noops",
+    # "libero_goal_no_noops",
+    "libero_goal_no_noops_w_bbox",
+
     # "libero_object_no_noops",
     # "libero_spatial_no_noops",
 ]  # For simplicity we will combine multiple Libero datasets into one training dataset
@@ -75,6 +77,11 @@ def main(data_dir: str, *, push_to_hub: bool = False):
                 "shape": (7,),
                 "names": ["actions"],
             },
+            "bboxs": {
+                "dtype": "string",
+                "shape": (),
+                "names": ["bboxs"],
+            },
         },
         image_writer_threads=10,
         image_writer_processes=5,
@@ -93,6 +100,7 @@ def main(data_dir: str, *, push_to_hub: bool = False):
                     step_data = episode_data[step]
                     point_image = step_data["observation"]["point_image"][()]
                     point_image = point_image[:, :, np.newaxis].repeat(3, axis=2) # (256, 256) -> (256, 256, 3)
+
                     dataset.add_frame(
                         {
                         "image": step_data["observation"]["image"][()],
@@ -100,6 +108,7 @@ def main(data_dir: str, *, push_to_hub: bool = False):
                         "state": step_data["observation"]["state"][()],
                         "actions": step_data["action"][()],
                         "task": step_data["language_instruction"][()].decode(),
+                        "bboxs": step_data["observation"]["bboxs"][()].decode(),
                         "point_image": point_image,
                         }
                     )
