@@ -175,23 +175,22 @@ class Attention(nn.Module):
                 qkvs.append(qkv_einsum("BSD,3KDH->3BSKH", x))
             else:
                 q_einsum = lora.Einsum(
-                    shape=(config.num_heads, config.width, config.head_dim),
+                    shape=(config.num_heads, config.width, config.head_dim), # 8, 2048/1024, 256
                     name=_name("q_einsum", i),
                     init_fn=nn.initializers.lecun_normal(in_axis=-2, out_axis=-1, batch_axis=(0,)),
                     lora_config=config.lora_configs.get("attn"),
                 )
                 q = q_einsum("BTD,NDH->BTNH", x)
                 kv_einsum = lora.Einsum(
-                    shape=(2, config.num_kv_heads, config.width, config.head_dim),
+                    shape=(2, config.num_kv_heads, config.width, config.head_dim), # 2, 1, 2048/1024, 256
                     name=_name("kv_einsum", i),
                     init_fn=nn.initializers.lecun_normal(in_axis=-2, out_axis=-1, batch_axis=(0, 1)),
                     lora_config=config.lora_configs.get("attn"),
                 )
                 k, v = kv_einsum("BSD,2KDH->2BSKH", x)
                 qkvs.append((q, k, v))
-
+        
         q, k, v = (jnp.concatenate(y, axis=1) for y in zip(*qkvs, strict=True))
-
         q = _apply_rope(q, positions=positions)
         q *= self.configs[0].head_dim ** -0.5
 
@@ -204,7 +203,6 @@ class Attention(nn.Module):
             cache_k, cache_v = kv_cache
             k = jnp.concatenate([cache_k, k], axis=1)
             v = jnp.concatenate([cache_v, v], axis=1)
-
         q = einops.rearrange(q, "B T (K G) H -> B T K G H", K=self.configs[0].num_kv_heads)
         logits = jnp.einsum("BTKGH,BSKH->BKGTS", q, k, preferred_element_type=jnp.float32)
 
@@ -237,6 +235,7 @@ class Attention(nn.Module):
                 start = end
             else:
                 out.append(None)
+
 
         return out, (k, v)
 
@@ -300,7 +299,6 @@ class Block(nn.Module):
         post_attn = sharding.activation_sharding_constraint(post_attn)
         xs = jax.tree.map(lambda x, y: x + y, xs, post_attn)
         xs = sharding.activation_sharding_constraint(xs)
-
         out = []
         for i, (x, config) in enumerate(zip(xs, self.configs, strict=True)):
             if x is not None:

@@ -42,7 +42,6 @@ class Einsum(nn.Module):
 
     def setup(self):
         self.w = self.param("w", self.init_fn, self.shape)
-
         if config := self.lora_config:
             # Setup LoRA parameters.
             shape_a, shape_b = list(self.shape), list(self.shape)
