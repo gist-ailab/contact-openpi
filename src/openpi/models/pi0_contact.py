@@ -66,7 +66,7 @@ def posemb_sincos(
 
 
 @dataclasses.dataclass(frozen=True)
-class Pi0Config(_model.BaseModelConfig):
+class Pi0CTPConfig(_model.BaseModelConfig):
     dtype: str = "bfloat16"
     paligemma_variant: _gemma.Variant = "gemma_2b"
     action_expert_variant: _gemma.Variant = "gemma_300m"
@@ -79,11 +79,11 @@ class Pi0Config(_model.BaseModelConfig):
     @property
     @override
     def model_type(self) -> _model.ModelType:
-        return _model.ModelType.PI0
+        return _model.ModelType.PI0_CTP
 
     @override
-    def create(self, rng: at.KeyArrayLike) -> "Pi0":
-        return Pi0(self, rngs=nnx.Rngs(rng))
+    def create(self, rng: at.KeyArrayLike) -> "Pi0CTP":
+        return Pi0CTP(self, rngs=nnx.Rngs(rng))
 
     @override
     def inputs_spec(self, *, batch_size: int = 1) -> tuple[_model.Observation, _model.Actions]:
@@ -142,8 +142,8 @@ class Pi0Config(_model.BaseModelConfig):
         return nnx.All(*filters)
 
 
-class Pi0(_model.BaseModel):
-    def __init__(self, config: Pi0Config, rngs: nnx.Rngs):
+class Pi0CTP(_model.BaseModel):
+    def __init__(self, config: Pi0CTPConfig, rngs: nnx.Rngs):
         super().__init__(config.action_dim, config.action_horizon, config.max_token_len)
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
@@ -175,7 +175,7 @@ class Pi0(_model.BaseModel):
     @at.typecheck
     def embed_prefix(
         self, obs: _model.Observation
-    ) -> tuple[at.Float[at.Array, "b s emb"], at.Bool[at.Array, "b s"], at.Bool[at.Array, " s"]]:
+    ) -> tuple[at.Float[at.Array, "b s emb"], at.Bool[at.Array, "b s"], at.Bool[at.Array, "b s"]]:
         input_mask = []
         ar_mask = []
         tokens = []
@@ -191,24 +191,28 @@ class Pi0(_model.BaseModel):
                 )
             )
             # image tokens attend to each other
-            ar_mask += [False] * image_tokens.shape[1]
-        
+            # ar_mask += [False] * image_tokens.shape[1]
+            ar_mask.append(0 * input_mask[-1])
+        # print('ar_mask: ', ar_mask.shape)
         # add language (aka tokenized inputs)
         if obs.tokenized_prompt is not None:
             tokenized_inputs = self.PaliGemma.llm(obs.tokenized_prompt, method="embed")
             tokens.append(tokenized_inputs)
             input_mask.append(obs.tokenized_prompt_mask)
             # full attention between image and language inputs
-            ar_mask += [False] * tokenized_inputs.shape[1]
+            # ar_mask += [False] * tokenized_inputs.shape[1]
+            # booled_ar_mask = obs.token_ar_mask.astype(bool)
+            ar_mask.append(obs.token_ar_mask)
         tokens = jnp.concatenate(tokens, axis=1)
         input_mask = jnp.concatenate(input_mask, axis=1)
-        ar_mask = jnp.array(ar_mask)
+        ar_mask = jnp.concatenate(ar_mask, axis=1)
+        ar_mask = jnp.array(ar_mask, dtype=jnp.bool)
         return tokens, input_mask, ar_mask
 
     @at.typecheck
     def embed_suffix(
         self, obs: _model.Observation, noisy_actions: _model.Actions, timestep: at.Float[at.Array, " b"]
-    ) -> tuple[at.Float[at.Array, "b s emb"], at.Bool[at.Array, "b s"], at.Bool[at.Array, " s"]]:
+    ) -> tuple[at.Float[at.Array, "b s emb"], at.Bool[at.Array, "b s"], at.Bool[at.Array, "b s"]]:
         input_mask = []
         ar_mask = []
         tokens = []
@@ -235,12 +239,13 @@ class Pi0(_model.BaseModel):
         tokens = jnp.concatenate(tokens, axis=1)
         input_mask = jnp.concatenate(input_mask, axis=1)
         ar_mask = jnp.array(ar_mask)
+        ar_mask = jnp.broadcast_to(ar_mask, (tokens.shape[0], tokens.shape[1]))
         return tokens, input_mask, ar_mask
 
     @override
     def compute_loss(
         self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool = False
-    ) -> at.Float[at.Array, "*b ah"]:
+    ) -> tuple[at.Float[at.Array, "*b ah"], dict[str, at.Array]]:
         preprocess_rng, noise_rng, time_rng = jax.random.split(rng, 3)
         observation = _model.preprocess_observation(preprocess_rng, observation, train=train)
 
@@ -252,14 +257,22 @@ class Pi0(_model.BaseModel):
         u_t = noise - actions
 
         # one big forward pass of prefix + suffix at once
+
         prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
         suffix_tokens, suffix_mask, suffix_ar_mask = self.embed_suffix(observation, x_t, time)
         input_mask = jnp.concatenate([prefix_mask, suffix_mask], axis=1)
-        ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=0)
+        ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=1)
         attn_mask = make_attn_mask(input_mask, ar_mask)
         positions = jnp.cumsum(input_mask, axis=1) - 1
         (prefix_out, suffix_out), _ = self.PaliGemma.llm(
             [prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions
+        )
+
+        
+
+        txt_targets = jax.nn.one_hot(
+            observation.tokenized_prompt,
+            _gemma.PALIGEMMA_VOCAB_SIZE,
         )
 
         txt_logits = self.PaliGemma.llm(
@@ -267,8 +280,17 @@ class Pi0(_model.BaseModel):
             method="embedder_decode"
         )
         txt_logp = jax.nn.log_softmax(txt_logits, axis=-1)
-        top_txt_logp = jnp.argmax(txt_logp, axis=-1)
 
+        txt_token_loss = jnp.sum(txt_targets * txt_logp, axis=-1)
+        txt_loss_mask = observation.token_loss_mask
+        txt_loss = (
+            -jnp.sum(txt_token_loss * txt_loss_mask, axis=-1) /
+            jnp.clip(jnp.sum(txt_loss_mask, axis=-1), 1)
+            )
+
+        #* test for text tokenizer and debugging
+        top_txt_logp = jnp.argmax(txt_logp, axis=-1)
+    
         import sentencepiece
         import openpi.shared.download as download
 
@@ -277,10 +299,21 @@ class Pi0(_model.BaseModel):
             self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
 
         jax.debug.breakpoint()
-
+        #* test code end
+        
         v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
 
-        return jnp.mean(jnp.square(v_t - u_t), axis=-1)
+        action_loss = jnp.mean(jnp.square(v_t - u_t), axis=(-2, -1))
+
+        loss = action_loss + txt_loss
+
+        info = {
+            "loss": loss,
+            "action_loss": action_loss,
+            "txt_loss": txt_loss,
+        }
+
+        return loss, info
 
     @override
     def sample_actions(

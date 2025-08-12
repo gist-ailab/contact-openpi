@@ -251,6 +251,23 @@ class TokenizePrompt(DataTransformFn):
         tokens, token_masks = self.tokenizer.tokenize(prompt)
         return {**data, "tokenized_prompt": tokens, "tokenized_prompt_mask": token_masks}
 
+@dataclasses.dataclass(frozen=True)
+class TokenizeCTPPrompt(DataTransformFn):
+    tokenizer: _tokenizer.CTPPaligemmaTokenizer
+
+    def __call__(self, data: DataDict) -> DataDict:
+        if (prompt := data.pop("prompt", None)) is None:
+            raise ValueError("Prompt is required")
+
+        if not isinstance(prompt, str):
+            prompt = prompt.item()
+
+        tokens, token_masks, ar_mask, text_loss_mask = self.tokenizer.tokenize(prompt)
+        return {**data, "tokenized_prompt": tokens, 
+                "tokenized_prompt_mask": token_masks,
+                "token_ar_mask": ar_mask,
+                "token_loss_mask": text_loss_mask}
+
 
 @dataclasses.dataclass(frozen=True)
 class TokenizeFASTInputs(DataTransformFn):
