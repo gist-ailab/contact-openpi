@@ -122,17 +122,17 @@ class H5pyVisualizer:
             plt.close(self.fig)
         
         # 시각화
-        self.fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-        self.fig.suptitle(f'Episode {episode_idx}, Step {step_idx}', fontsize=16, fontweight='bold')
+        self.fig, axes = plt.subplots(2, 2, figsize=(20, 16))
+        self.fig.suptitle(f'Episode {episode_idx}, Step {step_idx}', fontsize=20, fontweight='bold')
         
         # Base image
         axes[0, 0].imshow(base_image)
-        axes[0, 0].set_title('Base Camera View', fontsize=14)
+        axes[0, 0].set_title('Base Camera View', fontsize=18)
         axes[0, 0].axis('off')
         
         # Wrist image
         axes[0, 1].imshow(wrist_image)
-        axes[0, 1].set_title('Wrist Camera View', fontsize=14)
+        axes[0, 1].set_title('Wrist Camera View', fontsize=18)
         axes[0, 1].axis('off')
         
         # axes 참조 저장
@@ -179,30 +179,30 @@ class H5pyVisualizer:
             if point['image_type'] == 'base':
                 # 자동 라벨링된 점은 다른 색상과 모양으로 표시
                 if is_auto_labeled:
-                    axes[0, 0].plot(point['x'], point['y'], '^', color='orange', markersize=10, 
+                    axes[0, 0].plot(point['x'], point['y'], '^', color='orange', markersize=12, 
                                    markeredgecolor='white', markeredgewidth=2)
                     axes[0, 0].text(point['x'] + 5, point['y'] + 5, f"A{i+1}", 
-                                   color='white', fontsize=10, weight='bold',
+                                   color='white', fontsize=12, weight='bold',
                                    bbox=dict(boxstyle="round,pad=0.2", facecolor='orange', alpha=0.8))
                 else:
-                    axes[0, 0].plot(point['x'], point['y'], 'o', color='red', markersize=8, 
+                    axes[0, 0].plot(point['x'], point['y'], 'o', color='red', markersize=10, 
                                    markeredgecolor='white', markeredgewidth=2)
                     axes[0, 0].text(point['x'] + 5, point['y'] + 5, str(i+1), 
-                                   color='white', fontsize=10, weight='bold',
+                                   color='white', fontsize=12, weight='bold',
                                    bbox=dict(boxstyle="round,pad=0.2", facecolor='red', alpha=0.8))
             elif point['image_type'] == 'wrist':
                 # 자동 라벨링된 점은 다른 색상과 모양으로 표시
                 if is_auto_labeled:
-                    axes[0, 1].plot(point['x'], point['y'], '^', color='yellow', markersize=10, 
+                    axes[0, 1].plot(point['x'], point['y'], '^', color='yellow', markersize=12, 
                                    markeredgecolor='white', markeredgewidth=2)
                     axes[0, 1].text(point['x'] + 5, point['y'] + 5, f"A{i+1}", 
-                                   color='white', fontsize=10, weight='bold',
+                                   color='white', fontsize=12, weight='bold',
                                    bbox=dict(boxstyle="round,pad=0.2", facecolor='yellow', alpha=0.8))
                 else:
-                    axes[0, 1].plot(point['x'], point['y'], 'o', color='blue', markersize=8, 
+                    axes[0, 1].plot(point['x'], point['y'], 'o', color='blue', markersize=10, 
                                    markeredgecolor='white', markeredgewidth=2)
                     axes[0, 1].text(point['x'] + 5, point['y'] + 5, str(i+1), 
-                                   color='white', fontsize=10, weight='bold',
+                                   color='white', fontsize=12, weight='bold',
                                    bbox=dict(boxstyle="round,pad=0.2", facecolor='blue', alpha=0.8))
         
         # Task description
@@ -210,13 +210,13 @@ class H5pyVisualizer:
         if len(task_text) > 100:
             task_text = task_text[:100] + "..."
         
-        axes[1, 0].text(0.1, 0.5, f'Task: {task_text}', fontsize=12, 
+        axes[1, 0].text(0.1, 0.5, f'Task: {task_text}', fontsize=16, 
                        transform=axes[1, 0].transAxes, verticalalignment='center',
                        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.7))
         axes[1, 0].set_xlim(0, 1)
         axes[1, 0].set_ylim(0, 1)
         axes[1, 0].axis('off')
-        axes[1, 0].set_title('Language Instruction', fontsize=14)
+        axes[1, 0].set_title('Language Instruction', fontsize=18)
         
         # Action and state info
         action_info = f"Action: {data['action'][:3]}... (shape: {data['action'].shape})"
@@ -225,40 +225,40 @@ class H5pyVisualizer:
         flags_info = f"Flags: Terminal={data['is_terminal']}, Last={data['is_last']}, First={data['is_first']}"
         
         info_text = f"{action_info}\n{state_info}\n{reward_info}\n{flags_info}"
-        axes[1, 1].text(0.1, 0.5, info_text, fontsize=10, 
+        axes[1, 1].text(0.1, 0.5, info_text, fontsize=14, 
                        transform=axes[1, 1].transAxes, verticalalignment='center',
                        bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgreen", alpha=0.7))
         axes[1, 1].set_xlim(0, 1)
         axes[1, 1].set_ylim(0, 1)
         axes[1, 1].axis('off')
-        axes[1, 1].set_title('Action & State Info', fontsize=14)
+        axes[1, 1].set_title('Action & State Info', fontsize=18)
         
         # 키보드 컨트롤 안내 텍스트 추가
         control_text = "Controls: ↑ (forward 10), ↓ (backward 10), n/→ (next), p/← (prev), s (save), l (label), c (DLT), e (copy to future), d (copy to past), t (clear all), r (remove), w (save episode), q (quit), h (help)"
         self.fig.text(0.5, 0.02, control_text, ha='center', va='bottom', 
-                     fontsize=10, bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7))
+                     fontsize=14, bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7))
         
         # 라벨링 모드 안내 텍스트
         if self.labeling_mode:
             label_text = "LABELING MODE: Left-click to add points, Right-click to remove points. Points auto-copy between steps. Press 'l' to finish."
             self.fig.text(0.5, 0.06, label_text, ha='center', va='bottom', 
-                         fontsize=12, bbox=dict(boxstyle="round,pad=0.3", facecolor="red", alpha=0.8))
+                         fontsize=16, bbox=dict(boxstyle="round,pad=0.3", facecolor="red", alpha=0.8))
         elif self.dlt_mode:
             dlt_text = f"DLT MODE: Click on base image to collect 2D-3D correspondences ({len(self.dlt_points_2d)}/6). Press 'c' to compute transform."
             self.fig.text(0.5, 0.06, dlt_text, ha='center', va='bottom', 
-                         fontsize=12, bbox=dict(boxstyle="round,pad=0.3", facecolor="green", alpha=0.8))
+                         fontsize=16, bbox=dict(boxstyle="round,pad=0.3", facecolor="green", alpha=0.8))
         elif self.copy_to_all_steps_mode:
             copy_text = "COPY TO FUTURE STEPS MODE: Click on any labeled point to copy it to all future steps. Press 'e' again to exit."
             self.fig.text(0.5, 0.06, copy_text, ha='center', va='bottom', 
-                         fontsize=12, bbox=dict(boxstyle="round,pad=0.3", facecolor="purple", alpha=0.8))
+                         fontsize=16, bbox=dict(boxstyle="round,pad=0.3", facecolor="purple", alpha=0.8))
         elif self.copy_to_past_steps_mode:
             copy_text = "COPY TO PAST STEPS MODE: Click on any labeled point to copy it to all past steps. Press 'd' again to exit."
             self.fig.text(0.5, 0.06, copy_text, ha='center', va='bottom', 
-                         fontsize=12, bbox=dict(boxstyle="round,pad=0.3", facecolor="orange", alpha=0.8))
+                         fontsize=16, bbox=dict(boxstyle="round,pad=0.3", facecolor="orange", alpha=0.8))
         elif self.auto_labeling_edit_mode:
             edit_text = "AUTO-LABELING EDIT MODE: Left-click to add points, Right-click to remove points. Press 'a' again to exit."
             self.fig.text(0.5, 0.06, edit_text, ha='center', va='bottom', 
-                         fontsize=12, bbox=dict(boxstyle="round,pad=0.3", facecolor="cyan", alpha=0.8))
+                         fontsize=16, bbox=dict(boxstyle="round,pad=0.3", facecolor="cyan", alpha=0.8))
         
         plt.tight_layout()
         
@@ -794,9 +794,9 @@ class H5pyVisualizer:
                                         print("Failed to save DLT point as label")
                                 
                                 # 점을 이미지에 표시 (DLT용)
-                                event.inaxes.plot(x, y, 's', color='green', markersize=10, markeredgecolor='white', markeredgewidth=2)
+                                event.inaxes.plot(x, y, 's', color='green', markersize=12, markeredgecolor='white', markeredgewidth=2)
                                 event.inaxes.text(x + 5, y + 5, f"D{len(self.dlt_points_2d)}", 
-                                                color='white', fontsize=10, weight='bold',
+                                                color='white', fontsize=12, weight='bold',
                                                 bbox=dict(boxstyle="round,pad=0.2", facecolor='green', alpha=0.8))
                                 
                                 # 캔버스 업데이트
@@ -1152,9 +1152,9 @@ class H5pyVisualizer:
                         
                         # 점을 이미지에 표시
                         color = 'red' if image_type == "base" else 'blue'
-                        event.inaxes.plot(x, y, 'o', color=color, markersize=8, markeredgecolor='white', markeredgewidth=2)
+                        event.inaxes.plot(x, y, 'o', color=color, markersize=10, markeredgecolor='white', markeredgewidth=2)
                         event.inaxes.text(x + 5, y + 5, str(len(self.clicked_points)), 
-                                        color='white', fontsize=10, weight='bold',
+                                        color='white', fontsize=12, weight='bold',
                                         bbox=dict(boxstyle="round,pad=0.2", facecolor=color, alpha=0.8))
                         
                         # 캔버스 업데이트

@@ -6,7 +6,7 @@ from openpi.models import tokenizer as _tokenizer
 def test_tokenize():
     tokenizer = _tokenizer.PaligemmaTokenizer(max_len=10)
     # tokens, masks = tokenizer.tokenize("Hello, world!")
-    tokens, masks = tokenizer.tokenize("detect the object")
+    tokens, masks = tokenizer.tokenize("<loc0204><loc0522><loc0904><loc0703>")
     print(f"Tokens: {tokens}")
     assert tokens.shape == (10,)
     assert masks.shape == (10,)
