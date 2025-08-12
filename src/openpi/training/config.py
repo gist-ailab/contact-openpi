@@ -16,6 +16,7 @@ import tyro
 import openpi.models.model as _model
 import openpi.models.pi0 as pi0
 import openpi.models.pi0_fast as pi0_fast
+import openpi.models.pi0_contact as pi0_contact
 import openpi.models.tokenizer as _tokenizer
 import openpi.policies.aloha_policy as aloha_policy
 import openpi.policies.droid_policy as droid_policy
@@ -110,6 +111,16 @@ class ModelTransformFactory(GroupFactory):
                         _transforms.ResizeImages(224, 224),
                         _transforms.TokenizePrompt(
                             _tokenizer.PaligemmaTokenizer(model_config.max_token_len),
+                        ),
+                    ],
+                )
+            case _model.ModelType.PI0_CTP:
+                return _transforms.Group(
+                    inputs=[
+                        _transforms.InjectDefaultPrompt(self.default_prompt),
+                        _transforms.ResizeImages(224, 224),
+                        _transforms.TokenizeCTPPrompt(
+                            _tokenizer.CTPPaligemmaTokenizer(model_config.max_token_len),
                         ),
                     ],
                 )
@@ -552,6 +563,7 @@ _CONFIGS = [
     TrainConfig(
         # Change the name to reflect your model and dataset.
         name="pi0_libero",
+        # name="pi0_ctp_libero",
         # Here you define the model config -- In this example we use pi0 as the model
         # architecture and perform *full* finetuning. in the examples below we show how to modify
         # this to perform *low-memory* (LORA) finetuning and use pi0-FAST as an alternative architecture.
@@ -560,8 +572,8 @@ _CONFIGS = [
         # dataset. For your own dataset, you can change the repo_id to point to your dataset.
         # Also modify the DataConfig to use the new config you made for your dataset above.
         data=LeRobotLiberoDataConfig(
-            repo_id="physical-intelligence/libero",
-            # repo_id="obj_centric_vla/libero",
+            # repo_id="physical-intelligence/libero",
+            repo_id="obj_centric_vla/libero",
             base_config=DataConfig(
                 # This flag determines whether we load the prompt (i.e. the task instruction) from the
                 # ``task`` field in the LeRobot dataset. If set to True, the prompt will show up in
@@ -572,8 +584,9 @@ _CONFIGS = [
         # Here you define which pre-trained checkpoint you want to load to initialize the model.
         # This should match the model config you chose above -- i.e. in this case we use the pi0 base model.
 
-        # weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
-        weight_loader=weight_loaders.PaliGemmaWeightLoader(),
+        weight_loader=weight_loaders.CheckpointWeightLoader("s3://openpi-assets/checkpoints/pi0_base/params"),
+        # weight_loader=weight_loaders.PaliGemmaWeightLoader(),
+
         # Below you can define other hyperparameters like the learning rate, number of training steps, etc.
         # Check the base TrainConfig class for a full list of available hyperparameters.
         num_train_steps=30_000,
@@ -585,7 +598,7 @@ _CONFIGS = [
         # Here you define the model config -- In this example we use pi0 as the model
         # architecture and perform *full* finetuning. in the examples below we show how to modify
         # this to perform *low-memory* (LORA) finetuning and use pi0-FAST as an alternative architecture.
-        model=pi0.Pi0Config(),
+        model=pi0_contact.Pi0CTPConfig(),
         # Here you define the dataset you are training on. In this example we use the Libero
         # dataset. For your own dataset, you can change the repo_id to point to your dataset.
         # Also modify the DataConfig to use the new config you made for your dataset above.

@@ -65,7 +65,7 @@ class CTPLiberoInputs(transforms.DataTransformFn):
         # right wrist image below.
         base_image = _parse_image(data["observation/image"])
         wrist_image = _parse_image(data["observation/wrist_image"])
-        point_image = _parse_image(data["observation/point_image"])
+        # point_image = _parse_image(data["observation/point_image"])
 
         # Create inputs dict. Do not change the keys in the dict below.
         inputs = {
@@ -74,15 +74,15 @@ class CTPLiberoInputs(transforms.DataTransformFn):
                 "base_0_rgb": base_image,
                 "left_wrist_0_rgb": wrist_image,
                 # Pad any non-existent images with zero-arrays of the appropriate shape.
-                # "right_wrist_0_rgb": np.zeros_like(base_image),
-                "right_wrist_0_rgb": point_image,
+                "right_wrist_0_rgb": np.zeros_like(base_image),
+                # "right_wrist_0_rgb": point_image,
             },
             "image_mask": {
                 "base_0_rgb": np.True_,
                 "left_wrist_0_rgb": np.True_,
                 # Mask any non-existent images with False (if ``mask_padding`` is True).
-                # "right_wrist_0_rgb": np.False_ if mask_padding else np.True_,
-                "right_wrist_0_rgb": np.True_,
+                "right_wrist_0_rgb": np.False_ if mask_padding else np.True_,
+                # "right_wrist_0_rgb": np.True_,
             },
         }
 
@@ -91,7 +91,7 @@ class CTPLiberoInputs(transforms.DataTransformFn):
         if "actions" in data:
             # We are padding to the model action dim.
             # For pi0-FAST, this is a no-op (since action_dim = 7).
-            actions = transforms.pad_to_dim(data["actions"], self.action_dim)
+            actions = transforms.pad_to_dim(data["actions"], self.action_dim) # for single arm 7 -> 32
             inputs["actions"] = actions
 
         # Pass the prompt (aka language instruction) to the model.
@@ -99,6 +99,12 @@ class CTPLiberoInputs(transforms.DataTransformFn):
         # stored in "prompt"; the output dict always needs to have the key "prompt").
         if "prompt" in data:
             inputs["prompt"] = data["prompt"]
+        # data["prompt"] = "prefix: ~~ \n suffix: <loc0><loc0><loc1023><loc1023>"
+        # get prefix and suffix from data["prompt"]
+        prefix, suffix = data["prompt"].split('\n')
+        prefix = prefix.split(': ')[1]
+        suffix = suffix.split(': ')[1]
+        
 
         return inputs
 

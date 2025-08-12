@@ -86,17 +86,17 @@ def process_and_save_dataset(data_dir: str, output_dir: str, *, visualize: bool 
                                 x_min_norm = int((bboxs[0, 1] / 256) * 1023)
                                 y_max_norm = int((bboxs[0, 2] / 256) * 1023)
                                 x_max_norm = int((bboxs[0, 3] / 256) * 1023)
-                                paligemma_format += f"<loc{y_min_norm}><loc{x_min_norm}><loc{y_max_norm}><loc{x_max_norm}>"
+                                paligemma_format += f"<loc{y_min_norm:04d}><loc{x_min_norm:04d}><loc{y_max_norm:04d}><loc{x_max_norm:04d}>"
                             else:
                                 for i, bbox in enumerate(bboxs):
                                     y_min_norm = int((bbox[0] / 256) * 1023)
                                     x_min_norm = int((bbox[1] / 256) * 1023)
                                     y_max_norm = int((bbox[2] / 256) * 1023)
                                     x_max_norm = int((bbox[3] / 256) * 1023)
-
-                                    paligemma_format += f"<loc{y_min_norm}><loc{x_min_norm}><loc{y_max_norm}><loc{x_max_norm}>; "
                                     if i == len(bboxs) - 1:
-                                        paligemma_format += f"<loc{y_min_norm}><loc{x_min_norm}><loc{y_max_norm}><loc{x_max_norm}>"
+                                        paligemma_format += f"<loc{y_min_norm:04d}><loc{x_min_norm:04d}><loc{y_max_norm:04d}><loc{x_max_norm:04d}>"
+                                    else:
+                                        paligemma_format += f"<loc{y_min_norm:04d}><loc{x_min_norm:04d}><loc{y_max_norm:04d}><loc{x_max_norm:04d}>;"
                             
                             # Add bbox data to observation
                             observation.create_dataset('bboxs', data=paligemma_format.encode())
@@ -134,7 +134,7 @@ def main(data_dir: str, output_dir: str = None, *, visualize: bool = False):
     """Main function to process and save datasets with bbox annotations"""
     
     if output_dir is None:
-        output_dir = f"{data_dir}/h5_dataset/processed_with_bbox"
+        output_dir = f"{data_dir}/h5_dataset/libero_goal_no_noops_w_bbox"
     
     process_and_save_dataset(data_dir, output_dir, visualize=visualize)
     print(f"All datasets processed and saved to {output_dir}")

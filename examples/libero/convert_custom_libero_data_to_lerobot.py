@@ -77,11 +77,11 @@ def main(data_dir: str, *, push_to_hub: bool = False):
                 "shape": (7,),
                 "names": ["actions"],
             },
-            "bboxs": {
-                "dtype": "string",
-                "shape": (),
-                "names": ["bboxs"],
-            },
+            # "bboxs": {
+            #     "dtype": "string",
+            #     "shape": (1,),
+            #     "names": ["bboxs"],
+            # },
         },
         image_writer_threads=10,
         image_writer_processes=5,
@@ -107,8 +107,8 @@ def main(data_dir: str, *, push_to_hub: bool = False):
                         "wrist_image": step_data["observation"]["wrist_image"][()],
                         "state": step_data["observation"]["state"][()],
                         "actions": step_data["action"][()],
-                        "task": step_data["language_instruction"][()].decode(),
-                        "bboxs": step_data["observation"]["bboxs"][()].decode(),
+                        "task": "prefix: " + step_data["language_instruction"][()].decode() + '\n' + \
+                            "suffix: " + step_data["observation"]["bboxs"][()].decode(),
                         "point_image": point_image,
                         }
                     )
