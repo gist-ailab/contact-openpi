@@ -101,9 +101,9 @@ class CTPLiberoInputs(transforms.DataTransformFn):
             inputs["prompt"] = data["prompt"]
         # data["prompt"] = "prefix: ~~ \n suffix: <loc0><loc0><loc1023><loc1023>"
         # get prefix and suffix from data["prompt"]
-        prefix, suffix = data["prompt"].split('\n')
-        prefix = prefix.split(': ')[1]
-        suffix = suffix.split(': ')[1]
+        # prefix, suffix = data["prompt"].split('\n')
+        # prefix = prefix.split(': ')[1]
+        # suffix = suffix.split(': ')[1]
         
 
         return inputs

@@ -17,6 +17,8 @@ import openpi.shared.nnx_utils as nnx_utils
 from functools import partial
 logger = logging.getLogger("openpi")
 
+PALIGEMMA_EOS_TOKEN = 1
+
 
 def make_attn_mask(input_mask, mask_ar):
     """Adapted from big_vision.
@@ -44,6 +46,15 @@ def make_attn_mask(input_mask, mask_ar):
     attn_mask = cumsum[:, None, :] <= cumsum[:, :, None]
     valid_mask = input_mask[:, None, :] * input_mask[:, :, None]
     return jnp.logical_and(attn_mask, valid_mask)
+
+
+def put_along_last_axis(arr, indices, values):
+    """Like np.put_along_axis(..., axis=-1), since jax is missing it."""
+    assert arr.ndim == indices.ndim == values.ndim, (arr.ndim, indices.ndim, values.ndim)
+    onehot = jax.nn.one_hot(indices, arr.shape[-1], dtype=values.dtype)
+    put_mask = jnp.einsum("...i,...in->...n", jnp.ones(values.shape, jnp.int32), onehot)
+    put_values = jnp.einsum("...i,...in->...n", values, onehot)
+    return jnp.where(put_mask, put_values, arr)
 
 
 @at.typecheck
@@ -105,6 +116,8 @@ class Pi0CTPConfig(_model.BaseModelConfig):
                 state=jax.ShapeDtypeStruct([batch_size, self.action_dim], jnp.float32),
                 tokenized_prompt=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32),
                 tokenized_prompt_mask=jax.ShapeDtypeStruct([batch_size, self.max_token_len], bool),
+                token_ar_mask=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.bool_),
+                token_loss_mask=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.bool_),
             )
         action_spec = jax.ShapeDtypeStruct([batch_size, self.action_horizon, self.action_dim], jnp.float32)
 
@@ -191,17 +204,14 @@ class Pi0CTP(_model.BaseModel):
                 )
             )
             # image tokens attend to each other
-            # ar_mask += [False] * image_tokens.shape[1]
             ar_mask.append(0 * input_mask[-1])
-        # print('ar_mask: ', ar_mask.shape)
+        
         # add language (aka tokenized inputs)
         if obs.tokenized_prompt is not None:
             tokenized_inputs = self.PaliGemma.llm(obs.tokenized_prompt, method="embed")
             tokens.append(tokenized_inputs)
             input_mask.append(obs.tokenized_prompt_mask)
             # full attention between image and language inputs
-            # ar_mask += [False] * tokenized_inputs.shape[1]
-            # booled_ar_mask = obs.token_ar_mask.astype(bool)
             ar_mask.append(obs.token_ar_mask)
         tokens = jnp.concatenate(tokens, axis=1)
         input_mask = jnp.concatenate(input_mask, axis=1)
@@ -242,6 +252,203 @@ class Pi0CTP(_model.BaseModel):
         ar_mask = jnp.broadcast_to(ar_mask, (tokens.shape[0], tokens.shape[1]))
         return tokens, input_mask, ar_mask
 
+    @at.typecheck
+    def predict_bbox(
+        self,
+        rng: at.KeyArrayLike,
+        observation: _model.Observation,
+        *,
+        temperature: float = 0.0,
+        max_decoding_steps: int = 64,
+    ) -> tuple[at.Int[at.Array, "b _s"], dict[str, at.Array]]:
+        """
+        Predict bbox tokens autoregressively using KV cache.
+        
+        Args:
+            rng: PRNG key.
+            observation: Observation with images and prompt.
+            temperature: decoding temperature.
+            max_decoding_steps: maximum decoding steps.
+        
+        Returns:
+            tuple: A tuple containing
+                - bbox_tokens: predicted bbox tokens.
+                - info: dict with additional information.
+        """
+        observation = _model.preprocess_observation(None, observation, train=False)
+        
+        # embed prefix (images + prompt)
+        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
+        prefix_attn_mask = make_attn_mask(prefix_mask, prefix_ar_mask)
+        prefix_positions = jnp.cumsum(prefix_mask, axis=1) - 1
+        
+        # first fill KV cache with a forward pass of the prefix
+        (prefix_pre_logits, _), kv_cache = self.PaliGemma.llm(
+            [prefix_tokens, None], mask=prefix_attn_mask, positions=prefix_positions
+        )
+        
+        # get the last logit for autoregressive decoding
+        last_pre_logit = prefix_pre_logits[:, -1:, :]
+        last_logit = self.PaliGemma.llm(last_pre_logit, method="embedder_decode")
+        
+        # prepare decoding
+        step_rng = jax.random.fold_in(rng, 0)
+        if temperature > 0.0:
+            token = jax.random.categorical(step_rng, last_logit / temperature, axis=-1)
+        else:
+            token = jnp.argmax(last_logit, axis=-1)
+        
+        has_eos = jnp.any(token == PALIGEMMA_EOS_TOKEN, axis=1)
+        all_eos = jnp.all(has_eos)
+        output_tokens = jnp.zeros((last_logit.shape[0], max_decoding_steps), dtype=token.dtype)
+        
+        # hack to ensure the kv_cache's shape remains fixed throughout the while loop
+        kv_cache = jax.tree.map(
+            lambda x: jnp.pad(x, ((0, 0), (0, 0), (0, max_decoding_steps), (0, 0), (0, 0))),
+            kv_cache,
+        )
+        
+        # attn_mask is shape (b, 1, prefix_len + 1 + max_decoding_steps)
+        prefix_attn_mask = einops.repeat(prefix_mask, "b p -> b s p", s=1)
+        attn_mask = jnp.pad(prefix_attn_mask, ((0, 0), (0, 0), (0, max_decoding_steps + 1)))
+        attn_mask = attn_mask.at[:, :, -1].set(True)
+
+        @at.typecheck
+        def _wrap_cache(cache_appended: at.Float[at.Array, "l b t k h"],
+                        step: at.Int[at.Array, ""],
+                        ) -> at.Float[at.Array, "l b t-1 k h"]:
+            new_value = cache_appended[:, :, -1]
+            cache = cache_appended[:, :, :-1]
+            cache = jax.lax.dynamic_update_index_in_dim(cache,
+                                                        new_value,
+                                                        prefix_mask.shape[1] + 1 + step,
+                                                        axis=2)
+            return cache
+        
+        def decode_step(carry):
+            last_logit, output_tokens, kv_cache, attn_mask, _, step = carry
+
+            step_rng = jax.random.fold_in(rng, step)
+            # Sample token from last logit
+            if temperature > 0.0:
+                token = jax.random.categorical(step_rng, last_logit / temperature, axis=-1)
+            else:
+                token = jnp.argmax(last_logit, axis=-1)
+            
+            output_tokens = put_along_last_axis(
+                output_tokens, jnp.broadcast_to(step, (token.shape[0], 1)), token)
+
+            # Check for early stopping
+            has_eos = jnp.any(token == PALIGEMMA_EOS_TOKEN, axis=1)
+            all_eos = jnp.all(has_eos)
+
+            # Decode one step
+            token_embedding = self.PaliGemma.llm(token, method="embed")
+            positions = prefix_positions[:, [-1]] + step + 1
+            (last_pre_logit, _), kv_cache_appended = self.PaliGemma.llm(
+                [token_embedding, None], mask=attn_mask, positions=positions, kv_cache=kv_cache
+            )
+
+            last_logit = self.PaliGemma.llm(last_pre_logit, method="embedder_decode")
+            kv_cache = jax.tree.map(
+                lambda x: _wrap_cache(x, step),
+                kv_cache_appended,
+            )
+            attn_mask = attn_mask.at[:, :, prefix_mask.shape[1] + 1 + step].set(True)
+            return last_logit, output_tokens, kv_cache, attn_mask, all_eos, step + 1
+        
+        def decode_cond(carry):
+            _, _, _, _, all_eos, step = carry
+            return (~all_eos) & (step < max_decoding_steps)
+        
+        _, bbox_tokens, kv_cache, _, _, _ = jax.lax.while_loop(
+            decode_cond, decode_step,
+            (last_logit, output_tokens, kv_cache, attn_mask, all_eos, 0),
+        )
+        
+        info = {
+            "prefix_tokens": prefix_tokens,
+            "prefix_mask": prefix_mask,
+            "prefix_positions": prefix_positions,
+            "kv_cache": kv_cache,
+        }
+        
+        return bbox_tokens, info
+
+    @at.typecheck
+    def sample_actions_with_bbox(
+        self,
+        rng: at.KeyArrayLike,
+        observation: _model.Observation,
+        bbox_tokens: at.Int[at.Array, "b s"],
+        prefix_info: dict[str, at.Array],
+        *,
+        num_steps: int | at.Int[at.Array, ""] = 10,
+    ) -> _model.Actions:
+        """
+        Sample actions using the predicted bbox tokens and cached prefix information.
+        
+        Args:
+            rng: PRNG key.
+            observation: Observation.
+            bbox_tokens: Predicted bbox tokens from predict_bbox.
+            prefix_info: Information from predict_bbox including kv_cache.
+            num_steps: number of action denoising steps.
+        
+        Returns:
+            _model.Actions: sampled actions.
+        """
+        observation = _model.preprocess_observation(None, observation, train=False)
+        
+        # Extract prefix information
+        prefix_tokens = prefix_info["prefix_tokens"]
+        prefix_mask = prefix_info["prefix_mask"]
+        prefix_positions = prefix_info["prefix_positions"]
+        kv_cache = prefix_info["kv_cache"]
+        
+        # note that we use the convention more common in diffusion literature, where t=1 is noise and t=0 is the target
+        dt = -1.0 / num_steps
+        batch_size = observation.state.shape[0]
+        noise = jax.random.normal(rng, (batch_size, self.action_horizon, self.action_dim))
+
+        def step(carry):
+            x_t, time = carry
+            suffix_tokens, suffix_mask, suffix_ar_mask = self.embed_suffix(
+                observation, x_t, jnp.broadcast_to(time, batch_size)
+            )
+            # `suffix_attn_mask` is shape (b, suffix_len, suffix_len) indicating how the suffix tokens can attend to each
+            # other
+            suffix_attn_mask = make_attn_mask(suffix_mask, suffix_ar_mask)
+            # `prefix_attn_mask` is shape (b, suffix_len, prefix_len) indicating how the suffix tokens can attend to the
+            # prefix tokens
+            prefix_attn_mask = einops.repeat(prefix_mask, "b p -> b s p", s=suffix_tokens.shape[1])
+            # `combined_mask` is shape (b, suffix_len, prefix_len + suffix_len) indicating how the suffix tokens (which
+            # generate the queries) can attend to the full prefix + suffix sequence (which generates the keys and values)
+            full_attn_mask = jnp.concatenate([prefix_attn_mask, suffix_attn_mask], axis=-1)
+            assert full_attn_mask.shape == (
+                batch_size,
+                suffix_tokens.shape[1],
+                prefix_tokens.shape[1] + suffix_tokens.shape[1],
+            )
+            # `positions` is shape (b, suffix_len) indicating the positions of the suffix tokens
+            positions = jnp.sum(prefix_mask, axis=-1)[:, None] + jnp.cumsum(suffix_mask, axis=-1) - 1
+
+            (prefix_out, suffix_out), _ = self.PaliGemma.llm(
+                [None, suffix_tokens], mask=full_attn_mask, positions=positions, kv_cache=kv_cache
+            )
+            assert prefix_out is None
+            v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
+
+            return x_t + dt * v_t, time + dt
+
+        def cond(carry):
+            x_t, time = carry
+            # robust to floating-point error
+            return time >= -dt / 2
+
+        x_0, _ = jax.lax.while_loop(cond, step, (noise, 1.0))
+        return x_0
+
     @override
     def compute_loss(
         self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool = False
@@ -268,8 +475,6 @@ class Pi0CTP(_model.BaseModel):
             [prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions
         )
 
-        
-
         txt_targets = jax.nn.one_hot(
             observation.tokenized_prompt,
             _gemma.PALIGEMMA_VOCAB_SIZE,
@@ -289,16 +494,16 @@ class Pi0CTP(_model.BaseModel):
             )
 
         #* test for text tokenizer and debugging
-        top_txt_logp = jnp.argmax(txt_logp, axis=-1)
+        # top_txt_logp = jnp.argmax(txt_logp, axis=-1)
     
-        import sentencepiece
-        import openpi.shared.download as download
+        # import sentencepiece
+        # import openpi.shared.download as download
 
-        path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
-        with path.open("rb") as f:
-            self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
+        # path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
+        # with path.open("rb") as f:
+        #     self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
 
-        jax.debug.breakpoint()
+        # jax.debug.breakpoint()
         #* test code end
         
         v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])

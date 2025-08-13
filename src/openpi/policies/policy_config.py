@@ -62,8 +62,14 @@ def create_trained_policy(
         if data_config.asset_id is None:
             raise ValueError("Asset id is required to load norm stats.")
         norm_stats = _checkpoints.load_norm_stats(checkpoint_dir / "assets", data_config.asset_id)
-
-    return _policy.Policy(
+    if train_config.model.model_type == _model.ModelType.PI0_CONTACT:
+        policy_cls = _policy.ContactPolicy
+    elif train_config.model.model_type == _model.ModelType.PI0:
+        policy_cls = _policy.Policy
+    else:
+        policy_cls = _policy.Policy
+    
+    return policy_cls(
         model,
         transforms=[
             *repack_transforms.inputs,
