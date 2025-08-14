@@ -35,7 +35,7 @@ def create_trained_policy(
     sample_kwargs: dict[str, Any] | None = None,
     default_prompt: str | None = None,
     norm_stats: dict[str, transforms.NormStats] | None = None,
-) -> _policy.Policy:
+) -> _policy.Policy | _policy.ContactPolicy:
     """Create a policy from a trained checkpoint.
 
     Args:
@@ -62,7 +62,7 @@ def create_trained_policy(
         if data_config.asset_id is None:
             raise ValueError("Asset id is required to load norm stats.")
         norm_stats = _checkpoints.load_norm_stats(checkpoint_dir / "assets", data_config.asset_id)
-    if train_config.model.model_type == _model.ModelType.PI0_CONTACT:
+    if train_config.model.model_type == _model.ModelType.PI0_CTP:
         policy_cls = _policy.ContactPolicy
     elif train_config.model.model_type == _model.ModelType.PI0:
         policy_cls = _policy.Policy

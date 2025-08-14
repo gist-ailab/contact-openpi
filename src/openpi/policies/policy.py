@@ -96,7 +96,7 @@ class ContactPolicy(BasePolicy):
         self._rng = rng or jax.random.key(0)
         self._sample_kwargs = sample_kwargs or {}
         self._metadata = metadata or {}
-        self._bbox_temperature = bbox_temperature
+        # self._bbox_temperature = bbox_temperature
         self._max_bbox_decoding_steps = max_bbox_decoding_steps
 
     @override
@@ -110,21 +110,18 @@ class ContactPolicy(BasePolicy):
         # Split RNG for bbox prediction and action sampling
         self._rng, bbox_rng, action_rng = jax.random.split(self._rng, 3)
         
+
         # Step 1: Predict bbox tokens autoregressively
         bbox_tokens, prefix_info = self._predict_bbox(
             bbox_rng, 
             _model.Observation.from_dict(inputs),
-            temperature=self._bbox_temperature,
-            max_decoding_steps=self._max_bbox_decoding_steps,
+            # max_decoding_steps=self._max_bbox_decoding_steps,
         )
-        
         # Step 2: Sample actions using the predicted bbox and cached prefix info
         actions = self._sample_actions_with_bbox(
             action_rng,
-            _model.Observation.from_dict(inputs),
-            bbox_tokens,
-            prefix_info,
-            **self._sample_kwargs,
+            _model.Observation.from_dict(inputs), 
+            **self._sample_kwargs
         )
 
         outputs = {
@@ -132,7 +129,7 @@ class ContactPolicy(BasePolicy):
             "actions": actions,
             "bbox_tokens": bbox_tokens,
         }
-        print(outputs)
+       
         # Unbatch and convert to np.ndarray.
         outputs = jax.tree.map(lambda x: np.asarray(x[0, ...]), outputs)
         return self._output_transform(outputs)
