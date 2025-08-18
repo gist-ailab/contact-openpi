@@ -386,7 +386,7 @@ class Pi0CTP(_model.BaseModel):
     def predict_bbox(self, 
                      rng: at.KeyArrayLike, 
                      observation: _model.Observation,
-                     max_decoding_steps: int = 64,
+                     max_decoding_steps: int = 48,
                      ):
         observation = _model.preprocess_observation(None, observation, train=False, image_keys=list(observation.images.keys()))
         before_padding_prompt = observation.tokenized_prompt
@@ -422,29 +422,91 @@ class Pi0CTP(_model.BaseModel):
         all_eos = jnp.all(has_eos)
         output_tokens = jnp.zeros((eop_logit.shape[0], max_decoding_steps), dtype=token.dtype)
 
+        # prefix_mask가 False인 부분에 대해 pre_kv_cache 값을 0으로 만들기
+        # prefix_mask: (1, 816) -> (1, 1, 816, 1, 1)로 브로드캐스팅
+        prefix_mask_broadcasted = prefix_mask[:, None, :, None, None]
+        
+        
+        
+        
+
+        #! Test for attention mask
         kv_cache = jax.tree.map(
-            lambda x: jnp.pad(x, ((0, 0), (0, 0), (0, max_decoding_steps), (0, 0), (0, 0))), pre_kv_cache)
+            lambda x: jnp.pad(x, ((0, 0), (0, 0), (0, max_decoding_steps), (0, 0), (0, 0))), pre_kv_cache) # (18, 1, 864, 1, 256)
         
         prefix_attn_mask = einops.repeat(prefix_mask, "b p -> b s p", s=1)
         attn_mask = jnp.pad(prefix_attn_mask,
                             ((0, 0), (0, 0), (0, max_decoding_steps + 1)))
-        attn_mask = attn_mask.at[:, :, -1].set(True)
+        attn_mask = attn_mask.at[:, :, -1].set(True) # (1, 1, 865)
+
+        
+
+        
+
+        #* test code
+        # prefix_mask가 True인 값만 추출하여 새로운 kv_cache 생성
+        # prefix_mask: (1, 816) -> (816,)로 squeeze
+        # prefix_mask_flat = prefix_mask.squeeze()  # (816,)
+        # true_count = jnp.sum(prefix_mask_flat)
+
+        # kv_cache = jax.tree.map(
+        #     lambda x: x[:, :, :true_count, :, :], pre_kv_cache)
+        # attn_mask = prefix_mask[:, :true_count]
+        # attn_mask = attn_mask[:, None, :]
+        
+        # kv_cache = jax.tree.map(
+        #     lambda x: jnp.compress(prefix_mask_flat, x, axis=2), pre_kv_cache)  # (18, 1, N, 1, 256)
+        
+        # attn_mask도 동일하게 처리
+        # attn_mask = jnp.compress(prefix_mask_flat, prefix_mask.squeeze(), axis=1)  # (1, N)
+        # attn_mask = attn_mask[:, None, :]  # (1, 1, N)
+        
+        # print(f"Original shape: {pre_kv_cache[0].shape}")
+        # print(f"Compressed shape: {kv_cache[0].shape}")
+        # print(f"True count: {jnp.sum(prefix_mask_flat)}")
+
+    
 
 
-        @at.typecheck
-        def _wrap_cache(cache_appended: at.Float[at.Array, "l b t k h"],
-                        step: at.Int[at.Array, ""],
-                        ) -> at.Float[at.Array, "l b t-1 k h"]:
-            new_value = cache_appended[:, :, -1]
-            cache = cache_appended[:, :, :-1]
-            cache = jax.lax.dynamic_update_index_in_dim(cache,
-                                                        new_value,
-                                                        prefix_mask.shape[1] + 1 + step,
-                                                        axis=2)
-            return cache
+        import sentencepiece
+        import openpi.shared.download as download
+
+        path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
+        with path.open("rb") as f:
+            self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
+
+        jax.debug.breakpoint()
+
+        # batch_size = prefix_mask.shape[0]
+        # suffix_ar_mask = jnp.ones((batch_size, max_decoding_steps + 1), dtype=jnp.bool_)  # causal attention for suffix
+        
+        # # 전체 attention mask 구성: prefix (bidirectional) + suffix (causal)
+        # full_ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=1)
+        # full_input_mask = jnp.concatenate([prefix_mask, jnp.ones((batch_size, max_decoding_steps + 1), dtype=jnp.bool_)], axis=1)
+        # full_attn_mask = make_attn_mask(full_input_mask, full_ar_mask)
+
+        #! Test finished
+
+
+
+        def _wrap_cache(cache_appended, step):
+            # KV cache는 이미 패딩되어 있으므로, 새로운 값을 올바른 위치에 업데이트
+            # cache_appended는 (l, b, t+1, k, h)이고, kv_cache는 (l, b, t+max_decoding_steps, k, h)
+            new_value = cache_appended[:, :, -1]  # 마지막 토큰의 KV cache
+            # prefix_mask.shape[1] + 1 + step 위치에 새로운 값을 삽입
+            insert_pos = prefix_mask.shape[1] + 1 + step
+            return jax.lax.dynamic_update_index_in_dim(
+                cache_appended[:, :, :-1],  # 마지막 차원 제거 (t+1 -> t)
+                new_value,
+                insert_pos,
+                axis=2
+            )
         
         def decode_step(carry):
             last_logit, output_tokens, kv_cache, attn_mask, _, step = carry
+
+            # add padding to attn_mask
+            attn_mask = attn_mask.at[:, :, prefix_mask.shape[1] + 1 + step].set(False)
 
             token = jnp.argmax(last_logit, axis=-1)
 
@@ -463,6 +525,27 @@ class Pi0CTP(_model.BaseModel):
 
             token_embedding = self.PaliGemma.llm(token, method="embed")
             positions = prefix_positions[:, [-1]] + step + 1
+
+            #! Test start
+            #* test code
+            # 수정: 현재 step에 해당하는 attention mask slice 사용 - 동적 인덱싱으로 변경
+            # current_size = prefix_mask.shape[1] + step + 1
+            # current_attn_mask = jax.lax.dynamic_slice(
+            #     attn_mask, 
+            #     (0, 0, 0), 
+            #     (attn_mask.shape[0], current_size, current_size)
+            # )
+            
+            # (last_pre_logit, _), kv_cache_appended = self.PaliGemma.llm(
+            #     [token_embedding, None], mask=current_attn_mask, positions=positions, kv_cache=kv_cache
+            # )
+            # last_logit = self.PaliGemma.llm(last_pre_logit, method="embedder_decode")
+            # kv_cache = jax.tree.map(
+            #     lambda x: _wrap_cache(x, step),
+            #     kv_cache_appended,
+            # )
+
+            #* before code
             (last_pre_logit, _), kv_cache_appended = self.PaliGemma.llm(
                 [token_embedding, None], mask=attn_mask, positions=positions, kv_cache=kv_cache
             )
@@ -472,6 +555,9 @@ class Pi0CTP(_model.BaseModel):
                 kv_cache_appended,
             )
             attn_mask = attn_mask.at[:, :, prefix_mask.shape[1] + 1 + step].set(True)
+
+
+            #! Test end
 
 
             import sentencepiece
@@ -494,6 +580,13 @@ class Pi0CTP(_model.BaseModel):
                 decode_cond, decode_step,
                 (eop_logit, output_tokens, kv_cache, attn_mask, all_eos, 0),
                 )
+            #* test code
+            # jax.lax.while_loop(
+            #     decode_cond, decode_step,
+            #     (eop_logit, output_tokens, kv_cache, full_attn_mask, all_eos, 0),
+            #     )
+        
+            
         
 
 
