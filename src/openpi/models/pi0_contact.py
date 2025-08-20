@@ -280,18 +280,18 @@ class Pi0CTP(_model.BaseModel):
         )
 
         txt_targets = jax.nn.one_hot(
-            observation.tokenized_prompt,
+            observation.tokenized_prompt[:, 1:],
             _gemma.PALIGEMMA_VOCAB_SIZE,
         )
 
         txt_logits = self.PaliGemma.llm(
-            prefix_out[:, 768:, :], 
+            prefix_out[:, 768:-1], 
             method="embedder_decode"
         )
         txt_logp = jax.nn.log_softmax(txt_logits, axis=-1)
 
         txt_token_loss = jnp.sum(txt_targets * txt_logp, axis=-1)
-        txt_loss_mask = observation.token_loss_mask
+        txt_loss_mask = observation.token_loss_mask[:, 1:]
         txt_loss = (
             -jnp.sum(txt_token_loss * txt_loss_mask, axis=-1) /
             jnp.clip(jnp.sum(txt_loss_mask, axis=-1), 1)
@@ -579,7 +579,7 @@ class Pi0CTP(_model.BaseModel):
             # with path.open("rb") as f:
             #     self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
 
-            jax.debug.breakpoint()
+            # jax.debug.breakpoint()
             
             (last_pre_logit, _), kv_cache_appended = self.PaliGemma.llm(
                 [token_embedding, None], mask=attn_mask, positions=positions, kv_cache=kv_cache
