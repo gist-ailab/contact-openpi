@@ -91,6 +91,9 @@ class ContactPolicy(BasePolicy):
     ):
         self._predict_bbox = nnx_utils.module_jit(model.predict_bbox)
         self._sample_actions_with_bbox = nnx_utils.module_jit(model.sample_actions_with_bbox)
+        self._sample_actions = nnx_utils.module_jit(model.sample_actions)
+
+        # self._sample_actions_with_bbox = model.sample_actions_with_bbox
         self._input_transform = _transforms.compose(transforms)
         self._output_transform = _transforms.compose(output_transforms)
         self._rng = rng or jax.random.key(0)
@@ -101,18 +104,24 @@ class ContactPolicy(BasePolicy):
 
     @override
     def infer(self, obs: dict) -> dict:  # type: ignore[misc]
+
+        
         # Make a copy since transformations may modify the inputs in place.
         inputs = jax.tree.map(lambda x: x, obs)
         inputs = self._input_transform(inputs)
+        
+
+        
         # Make a batch and convert to jax.Array.
         inputs = jax.tree.map(lambda x: jnp.asarray(x)[np.newaxis, ...], inputs)
+
 
         # Split RNG for bbox prediction and action sampling
         self._rng, bbox_rng, action_rng = jax.random.split(self._rng, 3)
         
 
         # Step 1: Predict bbox tokens autoregressively
-        bbox_tokens, prefix_info = self._predict_bbox(
+        bbox_tokens, kv_cache, prefix_attn_mask = self._predict_bbox(
             bbox_rng, 
             _model.Observation.from_dict(inputs),
             # max_decoding_steps=self._max_bbox_decoding_steps,
@@ -121,15 +130,23 @@ class ContactPolicy(BasePolicy):
         actions = self._sample_actions_with_bbox(
             action_rng,
             _model.Observation.from_dict(inputs), 
+            _kv_cache=kv_cache,
+            _prefix_attn_mask=prefix_attn_mask,
             **self._sample_kwargs
         )
 
         outputs = {
             "state": inputs["state"],
             "actions": actions,
-            "bbox_tokens": bbox_tokens,
+            # "bbox_tokens": bbox_tokens,
         }
-       
+
+        # self._rng, sample_rng = jax.random.split(self._rng)
+        # outputs = {
+        #     "state": inputs["state"],
+        #     "actions": self._sample_actions(sample_rng, _model.Observation.from_dict(inputs), **self._sample_kwargs),
+        # }
+        
         # Unbatch and convert to np.ndarray.
         outputs = jax.tree.map(lambda x: np.asarray(x[0, ...]), outputs)
         return self._output_transform(outputs)

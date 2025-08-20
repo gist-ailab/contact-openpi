@@ -55,8 +55,8 @@ class CTPPaligemmaTokenizer:
 
         prefix_tokens = self._tokenizer.encode(prefix, add_bos=True) + self._tokenizer.encode("\n")
         suffix_tokens = self._tokenizer.encode(suffix, add_eos=True)
-        
         tokens = prefix_tokens + suffix_tokens
+        
         tokens_len = len(tokens)
 
         if tokens_len < self._max_len:

@@ -324,23 +324,26 @@ class Pi0(_model.BaseModel):
             )
             # `positions` is shape (b, suffix_len) indicating the positions of the suffix tokens
             positions = jnp.sum(prefix_mask, axis=-1)[:, None] + jnp.cumsum(suffix_mask, axis=-1) - 1
-            in_step_positions = jnp.sum(prefix_mask, axis=-1)[:, None] + jnp.cumsum(suffix_mask, axis=-1) - 1
-
-            (prefix_out, suffix_out), _ = self.PaliGemma.llm(
-                [None, suffix_tokens], mask=full_attn_mask, positions=positions, kv_cache=kv_cache
-            )
-            assert prefix_out is None
-            v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
-
-            #* for debugging
-            import sentencepiece
-            import openpi.shared.download as download
-
-            path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
-            with path.open("rb") as f:
-                self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
-
             jax.debug.breakpoint()
+            v_t = 1.0
+
+            # in_step_positions = jnp.sum(prefix_mask, axis=-1)[:, None] + jnp.cumsum(suffix_mask, axis=-1) - 1
+
+            # (prefix_out, suffix_out), _ = self.PaliGemma.llm(
+            #     [None, suffix_tokens], mask=full_attn_mask, positions=positions, kv_cache=kv_cache
+            # )
+            # assert prefix_out is None
+            # v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
+
+            # #* for debugging
+            # import sentencepiece
+            # import openpi.shared.download as download
+
+            # path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
+            # with path.open("rb") as f:
+            #     self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
+
+            # jax.debug.breakpoint()
 
             return x_t + dt * v_t, time + dt
 

@@ -344,6 +344,23 @@ class Pi0CTP(_model.BaseModel):
         prefix_attn_mask = make_attn_mask(prefix_mask, prefix_ar_mask)
         positions = jnp.cumsum(prefix_mask, axis=1) - 1
         _, kv_cache = self.PaliGemma.llm([prefix_tokens, None], mask=prefix_attn_mask, positions=positions)
+        
+        # import sentencepiece
+        # import openpi.shared.download as download
+        # prefix_out, suffix_out = _
+
+        # txt_logits = self.PaliGemma.llm(
+        #     prefix_out[:, 768:, :], 
+        #     method="embedder_decode"
+        # )
+        # txt_logp = jax.nn.log_softmax(txt_logits, axis=-1)
+        # top_txt_logp = jnp.argmax(txt_logp, axis=-1)
+
+        # path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
+        # with path.open("rb") as f:
+        #     self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
+
+        # jax.debug.breakpoint()
 
         def step(carry):
             x_t, time = carry
@@ -383,6 +400,7 @@ class Pi0CTP(_model.BaseModel):
         x_0, _ = jax.lax.while_loop(cond, step, (noise, 1.0))
         return x_0
 
+    
     def predict_bbox(self, 
                      rng: at.KeyArrayLike, 
                      observation: _model.Observation,
@@ -407,6 +425,23 @@ class Pi0CTP(_model.BaseModel):
         (pre_logit, _), pre_kv_cache = self.PaliGemma.llm(
             [prefix_token_embeddings, None], mask=prefix_attn_mask, positions=prefix_positions
         )
+        
+        # import sentencepiece
+        # import openpi.shared.download as download
+        # prefix_out = pre_logit
+
+        # txt_logits = self.PaliGemma.llm(
+        #     prefix_out[:, 768:, :], 
+        #     method="embedder_decode"
+        # )
+        # txt_logp = jax.nn.log_softmax(txt_logits, axis=-1)
+        # top_txt_logp = jnp.argmax(txt_logp, axis=-1)
+
+        # path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
+        # with path.open("rb") as f:
+        #     self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
+
+        # jax.debug.breakpoint()
 
         eop_indices = prefix_positions[:, -1]
         eop_pre_logit = jnp.take_along_axis(pre_logit, eop_indices[:, None, None], axis=1)
@@ -431,19 +466,28 @@ class Pi0CTP(_model.BaseModel):
         
 
         #! Test for attention mask
-        kv_cache = jax.tree.map(
-            lambda x: jnp.pad(x, ((0, 0), (0, 0), (0, max_decoding_steps), (0, 0), (0, 0))), pre_kv_cache) # (18, 1, 864, 1, 256)
+        # kv_cache = jax.tree.map(
+        #     lambda x: jnp.pad(x, ((0, 0), (0, 0), (0, max_decoding_steps), (0, 0), (0, 0))), pre_kv_cache) # (18, 1, 864, 1, 256)
         
-        prefix_attn_mask = einops.repeat(prefix_mask, "b p -> b s p", s=1)
-        attn_mask = jnp.pad(prefix_attn_mask,
-                            ((0, 0), (0, 0), (0, max_decoding_steps + 1)))
-        attn_mask = attn_mask.at[:, :, -1].set(True) # (1, 1, 865)
+        # prefix_attn_mask = einops.repeat(prefix_mask, "b p -> b s p", s=1)
+        # attn_mask = jnp.pad(prefix_attn_mask,
+        #                     ((0, 0), (0, 0), (0, max_decoding_steps + 1)))
+        # attn_mask = attn_mask.at[:, :, -1].set(True) # (1, 1, 865)
 
         
 
         
 
         #* test code
+        # padding kv_cache and attn_mask
+        kv_cache = jax.tree.map(
+            lambda x: jnp.where(prefix_mask_broadcasted, x, 0), pre_kv_cache)
+        attn_mask = einops.repeat(prefix_mask, "b p -> b s p", s=1)
+        attn_mask = jnp.pad(attn_mask, ((0, 0), (0, 0), (0, 1)))
+        attn_mask = attn_mask.at[:, :, -1].set(True)
+        last_true_position = jnp.argmax(prefix_positions, axis=-1)[0]
+
+
         # prefix_mask가 True인 값만 추출하여 새로운 kv_cache 생성
         # prefix_mask: (1, 816) -> (816,)로 squeeze
         # prefix_mask_flat = prefix_mask.squeeze()  # (816,)
@@ -468,14 +512,14 @@ class Pi0CTP(_model.BaseModel):
     
 
 
-        import sentencepiece
-        import openpi.shared.download as download
+        # import sentencepiece
+        # import openpi.shared.download as download
 
-        path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
-        with path.open("rb") as f:
-            self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
+        # path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
+        # with path.open("rb") as f:
+        #     self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
 
-        jax.debug.breakpoint()
+        # jax.debug.breakpoint()
 
         # batch_size = prefix_mask.shape[0]
         # suffix_ar_mask = jnp.ones((batch_size, max_decoding_steps + 1), dtype=jnp.bool_)  # causal attention for suffix
@@ -494,58 +538,49 @@ class Pi0CTP(_model.BaseModel):
             # cache_appended는 (l, b, t+1, k, h)이고, kv_cache는 (l, b, t+max_decoding_steps, k, h)
             new_value = cache_appended[:, :, -1]  # 마지막 토큰의 KV cache
             # prefix_mask.shape[1] + 1 + step 위치에 새로운 값을 삽입
-            insert_pos = prefix_mask.shape[1] + 1 + step
+            # insert_pos = prefix_mask.shape[1] + 1 + step
+            insert_pos = last_true_position + 1 + step
             return jax.lax.dynamic_update_index_in_dim(
                 cache_appended[:, :, :-1],  # 마지막 차원 제거 (t+1 -> t)
                 new_value,
                 insert_pos,
                 axis=2
             )
-        
+        # import sentencepiece
+        # import openpi.shared.download as download
+
+        # path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
+        # with path.open("rb") as f:
+        #     self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
+
+        # jax.debug.breakpoint()
         def decode_step(carry):
             last_logit, output_tokens, kv_cache, attn_mask, _, step = carry
 
-            # add padding to attn_mask
-            attn_mask = attn_mask.at[:, :, prefix_mask.shape[1] + 1 + step].set(False)
-
             token = jnp.argmax(last_logit, axis=-1)
-
             token = jnp.where(
                 step==0,
                 jnp.full_like(token, 108),
                 token
             )
-            
             output_tokens = put_along_last_axis(
                 output_tokens, jnp.broadcast_to(step, (token.shape[0], 1)), token
             )
-
             has_eos = jnp.any(token == PALIGEMMA_EOS_TOKEN, axis=1)
             all_eos = jnp.all(has_eos)
 
             token_embedding = self.PaliGemma.llm(token, method="embed")
             positions = prefix_positions[:, [-1]] + step + 1
 
-            #! Test start
-            #* test code
-            # 수정: 현재 step에 해당하는 attention mask slice 사용 - 동적 인덱싱으로 변경
-            # current_size = prefix_mask.shape[1] + step + 1
-            # current_attn_mask = jax.lax.dynamic_slice(
-            #     attn_mask, 
-            #     (0, 0, 0), 
-            #     (attn_mask.shape[0], current_size, current_size)
-            # )
-            
-            # (last_pre_logit, _), kv_cache_appended = self.PaliGemma.llm(
-            #     [token_embedding, None], mask=current_attn_mask, positions=positions, kv_cache=kv_cache
-            # )
-            # last_logit = self.PaliGemma.llm(last_pre_logit, method="embedder_decode")
-            # kv_cache = jax.tree.map(
-            #     lambda x: _wrap_cache(x, step),
-            #     kv_cache_appended,
-            # )
+            # import sentencepiece
+            # import openpi.shared.download as download
 
-            #* before code
+            # path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
+            # with path.open("rb") as f:
+            #     self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
+
+            jax.debug.breakpoint()
+            
             (last_pre_logit, _), kv_cache_appended = self.PaliGemma.llm(
                 [token_embedding, None], mask=attn_mask, positions=positions, kv_cache=kv_cache
             )
@@ -554,20 +589,7 @@ class Pi0CTP(_model.BaseModel):
                 lambda x: _wrap_cache(x, step),
                 kv_cache_appended,
             )
-            attn_mask = attn_mask.at[:, :, prefix_mask.shape[1] + 1 + step].set(True)
-
-
-            #! Test end
-
-
-            import sentencepiece
-            import openpi.shared.download as download
-
-            path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
-            with path.open("rb") as f:
-                self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
-
-            jax.debug.breakpoint()
+            attn_mask = attn_mask.at[:, :, last_true_position + 1 + step].set(True)
 
             return last_logit, output_tokens, kv_cache, attn_mask, all_eos, step + 1
 
@@ -575,7 +597,7 @@ class Pi0CTP(_model.BaseModel):
             _, _, _, _, all_eos, step = carry
             return (~all_eos) & (step < max_decoding_steps)
         
-        _, suffix_txt_tokens, kv_cache, _, _, _ = \
+        _, suffix_txt_tokens, kv_cache, prefix_attn_mask, _, _ = \
             jax.lax.while_loop(
                 decode_cond, decode_step,
                 (eop_logit, output_tokens, kv_cache, attn_mask, all_eos, 0),
@@ -586,6 +608,9 @@ class Pi0CTP(_model.BaseModel):
             #     (eop_logit, output_tokens, kv_cache, full_attn_mask, all_eos, 0),
             #     )
         
+
+        return suffix_txt_tokens, kv_cache, prefix_attn_mask
+        
             
         
 
@@ -594,10 +619,68 @@ class Pi0CTP(_model.BaseModel):
                                   rng: at.KeyArrayLike,
                                   observation: _model.Observation,
                                   *,
+                                  _kv_cache,
+                                  _prefix_attn_mask,
                                   num_steps: int | at.Int[at.Array, ""] = 10,
                                   ):
+        dt = -1.0 / num_steps
+        batch_size = observation.state.shape[0]
+        noise = jax.random.normal(rng, (batch_size, self.action_horizon, self.action_dim))
+        attn_mask = _prefix_attn_mask[:, :, :-1]
+        # change last true token to false
+        # find last true token
+        last_true_position = jnp.argmax(jnp.cumsum(attn_mask, axis=-1)-1, axis=-1)
+        attn_mask = attn_mask.at[:, :, last_true_position].set(False)
+        kv_cache = _kv_cache
+
+        # kv_cache = jax.tree.map(
+            # lambda x: x[:, :, :-1, :, :], _kv_cache)
+
+
+
+        # import sentencepiece
+        # import openpi.shared.download as download
+
+        # path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
+        # with path.open("rb") as f:
+        #     self.tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
+        # jax.debug.breakpoint()
+
+        def step(carry):
+            x_t, time = carry
+            suffix_tokens, suffix_mask, suffix_ar_mask = self.embed_suffix(
+                observation, x_t, jnp.broadcast_to(time, batch_size)
+            )
+            suffix_attn_mask = make_attn_mask(suffix_mask, suffix_ar_mask)
+            prefix_mask = einops.repeat(attn_mask, "b s p -> (b s) p") # (1, 816)
+            prefix_attn_mask = einops.repeat(prefix_mask, "b p -> b s p", s=suffix_tokens.shape[1])
+            full_attn_mask = jnp.concatenate([prefix_attn_mask, suffix_attn_mask], axis=-1)
+            assert full_attn_mask.shape == (
+                batch_size,
+                suffix_tokens.shape[1],
+                attn_mask.shape[2] + suffix_tokens.shape[1],
+            )
+            positions = jnp.sum(prefix_mask, axis=-1)[:, None] + jnp.cumsum(suffix_mask, axis=-1) - 1
+            (prefix_out, suffix_out), _ = self.PaliGemma.llm(
+                [None, suffix_tokens], mask=full_attn_mask, positions=positions, kv_cache=kv_cache
+            )
+            assert prefix_out is None
+            v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
+
+            # v_t = 1.0
+            # jax.debug.breakpoint()
+
+            return x_t + dt * v_t, time + dt
+
+            
+        def cond(carry):
+            x_t, time = carry
+            # robust to floating-point error
+            return time >= -dt / 2
+
+        x_0, _ = jax.lax.while_loop(cond, step, (noise, 1.0))
         
-        
-        return
+
+        return x_0
 
     
