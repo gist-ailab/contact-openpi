@@ -88,8 +88,8 @@ def main(data_dir: str, *, push_to_hub: bool = False):
                         "task": step["language_instruction"].decode(),
                     }
                 )
-                print(step["language_instruction"].decode())
-            # dataset.save_episode()
+                # print(step["language_instruction"].decode())
+            dataset.save_episode()
 
     # Consolidate the dataset, skip computing stats since we will do that later
     # dataset.consolidate(run_compute_stats=False)
