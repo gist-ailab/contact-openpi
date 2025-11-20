@@ -211,7 +211,6 @@ class DeltaActions(DataTransformFn):
         dims = mask.shape[-1]
         actions[..., :dims] -= np.expand_dims(np.where(mask, state[..., :dims], 0), axis=-2)
         data["actions"] = actions
-
         return data
 
 
@@ -439,6 +438,7 @@ def make_bool_mask(*dims: int) -> tuple[bool, ...]:
             result.extend([True] * (dim))
         else:
             result.extend([False] * (-dim))
+    
     return tuple(result)
 
 
