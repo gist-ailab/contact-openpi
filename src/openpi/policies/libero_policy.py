@@ -96,11 +96,12 @@ class LiberoInputs(transforms.DataTransformFn):
         # stored in "prompt"; the output dict always needs to have the key "prompt").
         
         if "prompt" in data:
-            # inputs["prompt"] = data["prompt"]
-            prefix, suffix = data["prompt"].split('\n')
-            prefix = prefix.split(': ')[1]
-            # suffix = suffix.split(': ')[1]
-            inputs["prompt"] = prefix
+            # prefix, suffix = data["prompt"].split('\n')
+            # prefix = prefix.split(': ')[1]
+            # # suffix = suffix.split(': ')[1]
+            # inputs["prompt"] = prefix
+            inputs["prompt"] = data["prompt"]
+
 
 
 
