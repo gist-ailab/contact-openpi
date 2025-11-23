@@ -139,8 +139,8 @@ def eval_libero(args: Args) -> None:
                                     obs["robot0_gripper_qpos"],
                                 )
                             ),
-                            # "prompt": str(task_description),
-                            "prompt": "prefix: "+str(task_description)+"\n"+"suffix: ",
+                            "prompt": str(task_description),
+                            # "prompt": "prefix: "+str(task_description)+"\n"+"suffix: ",
                         }
 
                         # Query model to get action

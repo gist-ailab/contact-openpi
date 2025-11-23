@@ -324,7 +324,7 @@ class Pi0(_model.BaseModel):
             )
             # `positions` is shape (b, suffix_len) indicating the positions of the suffix tokens
             positions = jnp.sum(prefix_mask, axis=-1)[:, None] + jnp.cumsum(suffix_mask, axis=-1) - 1
-            jax.debug.breakpoint()
+            # jax.debug.breakpoint()
             v_t = 1.0
 
             # in_step_positions = jnp.sum(prefix_mask, axis=-1)[:, None] + jnp.cumsum(suffix_mask, axis=-1) - 1
