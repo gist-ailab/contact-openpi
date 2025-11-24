@@ -10,9 +10,9 @@ from tqdm import tqdm
 import tensorflow_datasets as tfds
 import tyro
 
-REPO_NAME = "pi0_baseline/isaaclab"  # Name of the output dataset, also used for the Hugging Face Hub
+REPO_NAME = "pi0_baseline/isaaclab_opendoor_v2"  # Name of the output dataset, also used for the Hugging Face Hub
 RAW_DATASET_NAMES = [
-    "open_door"
+    "open_door_v2"
 ]
 
 def axis_angle_from_quat(quat: torch.Tensor, eps: float = 1.0e-6) -> torch.Tensor:
