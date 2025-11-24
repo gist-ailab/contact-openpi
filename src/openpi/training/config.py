@@ -371,7 +371,7 @@ class LeRobotLiberoDataAbsQuatConfig(DataConfigFactory):
         # replace the transforms below with your own.
         data_transforms = _transforms.Group(
             inputs=[libero_policy.LiberoInputs(action_dim=model_config.action_dim, model_type=model_config.model_type)],
-            outputs=[libero_policy.LiberoOutputs()],
+            outputs=[libero_policy.LiberoCustomOutputs()],
         )
 
         # One additional data transform: pi0 models are trained on delta actions (relative to the first
