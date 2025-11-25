@@ -697,7 +697,7 @@ _CONFIGS = [
         # Also modify the DataConfig to use the new config you made for your dataset above.
         data=LeRobotLiberoDataConfig(
             # repo_id="physical-intelligence/libero",
-            repo_id="pi0_baseline/isaaclab",
+            repo_id="pi0_baseline/isaaclab_opendoor_v2",
             base_config=DataConfig(
                 # This flag determines whether we load the prompt (i.e. the task instruction) from the
                 # ``task`` field in the LeRobot dataset. If set to True, the prompt will show up in
