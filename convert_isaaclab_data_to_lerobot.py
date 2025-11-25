@@ -3,6 +3,7 @@ import h5py
 import os
 import numpy as np
 import torch
+from PIL import Image
 
 from lerobot.common.datasets.lerobot_dataset import HF_LEROBOT_HOME
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
@@ -100,9 +101,13 @@ def main(data_dir: str, *, push_to_hub: bool = False):
                     wrist_image = wrist_cam[i]
                     
                     # reshape the image to (256, 256, 3)
-                    image.resize((256, 256, 3))
-                    # wrist_image = wrist_image.resize((256, 256, 3))
+                    # numpy의 resize()는 이미지를 깨뜨릴 수 있으므로 PIL Image를 사용
+                    if image.shape != (256, 256, 3):
+                        image = np.array(Image.fromarray(image).resize((256, 256), Image.Resampling.LANCZOS))
+                    if wrist_image.shape != (256, 256, 3):
+                        wrist_image = np.array(Image.fromarray(wrist_image).resize((256, 256), Image.Resampling.LANCZOS))
                     # process the action
+
                     action = actions[i]
                     # change quat to axis angle
                     position = action[0:3]
